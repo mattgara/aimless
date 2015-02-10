@@ -226,7 +226,7 @@ void patchnxcorr( int rad, im_t &im1, im_t &im2, im_t &disp ) {
 
 }
 
-void sgmscan(int ndisp,
+void sgm_scan(int ndisp,
         int mindisp,
         int p1,
         int p2,
@@ -380,9 +380,11 @@ void sgm( int ndisp,
     int width = im1.width;
     int height = im1.height;
 
+
+#if 0
+
     int npix = width;
     int *unravel = new int[2*npix];
-
     for ( int irow = 0; irow < height; ++irow ) { 
         //unsigned char *ref   = im1.data + irow*width;
         //unsigned char *match = im2.data + irow*width;
@@ -394,10 +396,29 @@ void sgm( int ndisp,
             unravel[2*icol+0] = irow;
             unravel[2*icol+1] = icol;
         }
-        sgmscan(ndisp,mindisp,p1,p2,width,unravel,npix,ref,match,out);
+        sgm_scan(ndisp,mindisp,p1,p2,width,unravel,npix,ref,match,out);
         std::cout << "\r done row " << irow+1 << " of " << height << std::flush;
     }
     std::cout << std::endl;
+
+#else
+    
+    int npix = height;
+    int *unravel = new int[2*npix];
+    for ( int icol = 0; icol < width; ++icol ) { 
+        unsigned char *ref   = im1.data;
+        unsigned char *match = im2.data;
+        unsigned char *out   = disp.data;
+        for ( int ipix = 0; ipix < npix; ++ipix ) {
+            unravel[2*ipix+0] = ipix;
+            unravel[2*ipix+1] = icol;
+        }
+        sgm_scan(ndisp,mindisp,p1,p2,width,unravel,npix,ref,match,out);
+        std::cout << "\r done scan " << icol+1 << " of " << width << std::flush;
+    }
+    std::cout << std::endl;
+
+#endif
 
     delete[] unravel;
 
