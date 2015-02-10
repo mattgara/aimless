@@ -1,2 +1,2 @@
-sterio: stereo.cpp
+stereo: stereo.cpp
 	$(CXX) stereo.cpp -O2 -o stereo

@@ -242,8 +242,15 @@ void sgmscan(int ndisp,
     std::fill(pathmatrix,pathmatrix+ndisp*npix,0); /* May be not required. */
 
     int* displut = new int[ndisp];
+    int* dispdifflut = new int[ndisp*ndisp];
     for ( int idisp = 0; idisp < ndisp; ++idisp ) {
         displut[idisp] = idisp + mindisp; 
+    }
+    for ( int idisp1 = 0; idisp1 < ndisp; ++idisp1 ) {
+        for ( int idisp2 = 0; idisp2 < ndisp; ++idisp2 ) {
+            dispdifflut[idisp1*ndisp+idisp2] =
+                std::abs( displut[idisp1] - displut[idisp2] );
+        }
     }
 
     // Initialize the 0th column first dependent on the data term only
@@ -274,10 +281,15 @@ void sgmscan(int ndisp,
                     int smoothterm = -1;
                     int v = matrix[ (ipix-1)*ndisp + idispprev ];
                     if ( v < 0 ) {
-                        //v = 0;
                         continue;
                     }
-                    int absdisp = std::abs(displut[idispprev]-displut[idisp]);
+
+			
+                    // mg: According to profiling, the line below is incredibly slow,
+                    // thus recommend a lut to replace for speed.
+                    //int absdisp = std::abs(displut[idispprev]-displut[idisp]);
+                    int absdisp = dispdifflut[idisp*ndisp + idispprev];
+
                     if ( absdisp == 0 ) {
                         smoothterm = v;
                     } else if (  absdisp == 1 ) {
@@ -319,13 +331,12 @@ void sgmscan(int ndisp,
         out[ipix] = pathmatrix[ (ipix+1)*ndisp + out[ipix+1] ];
     }
 
-    //std::cout << " out[0]: " << (int)out[0] << std::endl;
-    //std::cout << " out[1]: " << (int)out[1] << std::endl;
-
 
     delete[] matrix;
     delete[] pathmatrix;
     delete[] displut;
+    delete[] dispdifflut;
+
 
 }
 
@@ -363,19 +374,17 @@ void sgm( int ndisp,
 int main( int argc, char *argv[] ) {
 
 
-    int rad = 7;
+    //int rad = 7;
     im_t im1, im2, disp;
 
     std::cout << " Reading im1 " << std::endl;
     readpgm("cones_left.pgm",
-    //readpgm("/home/matt/Downloads/libelas/img/xb3-left.pgm",
             im1.data,
             im1.width,
             im1.height);
 
     std::cout << " Reading im2 " << std::endl;
     readpgm("cones_right.pgm",
-    //readpgm("/home/matt/Downloads/libelas/img/xb3-right.pgm",
             im2.data,
             im2.width,
             im2.height);
