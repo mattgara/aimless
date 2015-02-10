@@ -230,6 +230,8 @@ void sgmscan(int ndisp,
         int mindisp,
         int p1,
         int p2,
+        int width, /* Image width */
+        int *unravel,
         int npix,
         unsigned char *ref,
         unsigned char *match,
@@ -255,9 +257,13 @@ void sgmscan(int ndisp,
 
     // Initialize the 0th column first dependent on the data term only
     for ( int idisp = 0; idisp < ndisp; ++idisp ) {
-        int matchpos = 0+displut[idisp];
-        if ( matchpos >= 0 && matchpos < npix ) {
-            matrix[idisp] = std::abs((int)(ref[0])-(int)(match[matchpos]));
+        int refy = unravel[0];
+        int refx = unravel[1];
+        int matchposx = refx+displut[idisp];
+        int matchposy = refy;
+        if ( matchposx >= 0 && matchposx < npix ) {
+            matrix[idisp] = std::abs((int)(ref[refy*width+refx])-
+                    (int)(match[matchposy*width+matchposx]));
         } else {
             matrix[idisp] = -1; /* Negative values will indicate invalid matching */
         }
@@ -266,48 +272,54 @@ void sgmscan(int ndisp,
     
     for ( int ipix = 1; ipix < npix; ++ipix ) {
         for ( int idisp = 0; idisp < ndisp; ++idisp ) {
-                int matchpos = ipix+displut[idisp];
-                int dataterm = INT_MAX;
-                if ( matchpos >= 0 && matchpos < npix ) {
-                    dataterm = std::abs((int)(ref[ipix])-(int)(match[matchpos]));
-                } else {
-                    matrix[ipix*ndisp + idisp] = -1; /* Negative values will indicate invalid matching */
-                    pathmatrix[ipix*ndisp + idisp] = -1;
+            int refy = unravel[2*ipix+0];
+            int refx = unravel[2*ipix+1];
+            int matchposx = refx+displut[idisp];
+            int matchposy = refy;
+            //int matchpos = ipix+displut[idisp];
+            int dataterm = INT_MAX;
+            if ( matchposx >= 0 && matchposx < npix ) {
+                //dataterm = std::abs((int)(ref[ipix])-(int)(match[matchpos]));
+                dataterm = std::abs((int)(ref[refy*width+refx])-
+                        (int)(match[matchposy*width+matchposx]));
+            } else {
+                matrix[ipix*ndisp + idisp] = -1; /* Negative values will indicate invalid matching */
+                pathmatrix[ipix*ndisp + idisp] = -1;
+                continue;
+            }
+            int mintotalterm = INT_MAX;
+            int minidx = -1;
+            for ( int idispprev = 0; idispprev < ndisp; ++idispprev ) {
+                int smoothterm = -1;
+                int v = matrix[ (ipix-1)*ndisp + idispprev ];
+                if ( v < 0 ) {
                     continue;
                 }
-                int mintotalterm = INT_MAX;
-                int minidx = -1;
-                for ( int idispprev = 0; idispprev < ndisp; ++idispprev ) {
-                    int smoothterm = -1;
-                    int v = matrix[ (ipix-1)*ndisp + idispprev ];
-                    if ( v < 0 ) {
-                        continue;
-                    }
 
-			
-                    // mg: According to profiling, the line below is incredibly slow,
-                    // thus recommend a lut to replace for speed.
-                    //int absdisp = std::abs(displut[idispprev]-displut[idisp]);
-                    int absdisp = dispdifflut[idisp*ndisp + idispprev];
 
-                    if ( absdisp == 0 ) {
-                        smoothterm = v;
-                    } else if (  absdisp == 1 ) {
-                        smoothterm = v + p1;
-                    } else { 
-                        smoothterm = v + p2;
-                    }
+                // mg: According to profiling, the line below is incredibly slow,
+                // thus recommend a lut to replace for speed.
+                //int absdisp = std::abs(displut[idispprev]-displut[idisp]);
+                int absdisp = dispdifflut[idisp*ndisp + idispprev];
 
-                    int totalterm = smoothterm + dataterm;
-
-                    if ( totalterm  < mintotalterm ) {
-                        mintotalterm = totalterm;
-                        minidx = idispprev;
-                    }
-
+                if ( absdisp == 0 ) {
+                    smoothterm = v;
+                } else if (  absdisp == 1 ) {
+                    smoothterm = v + p1;
+                } else { 
+                    smoothterm = v + p2;
                 }
-                matrix[ipix*ndisp + idisp ] = mintotalterm;
-                pathmatrix[ipix*ndisp + idisp ] = minidx;
+
+                int totalterm = smoothterm + dataterm;
+
+                if ( totalterm  < mintotalterm ) {
+                    mintotalterm = totalterm;
+                    minidx = idispprev;
+                }
+
+            }
+            matrix[ipix*ndisp + idisp ] = mintotalterm;
+            pathmatrix[ipix*ndisp + idisp ] = minidx;
         }
     }
 
@@ -325,11 +337,22 @@ void sgmscan(int ndisp,
         }
     }
 
-    out[npix-1] = minenergyidx;
+    int *_out = new int[npix];
+
+    _out[npix-1] = minenergyidx;
 
     for ( int ipix = npix-2; ipix >= 0; --ipix ) {
-        out[ipix] = pathmatrix[ (ipix+1)*ndisp + out[ipix+1] ];
+        _out[ipix] = pathmatrix[ (ipix+1)*ndisp + _out[ipix+1] ];
     }
+
+    for ( int ipix = 0; ipix < npix; ++ipix ) {
+        int y = unravel[2*ipix + 0];
+        int x = unravel[2*ipix + 1];
+        out[y*width+x] = _out[ipix];
+    }
+    
+
+    delete[] _out;
 
 
     delete[] matrix;
@@ -357,15 +380,26 @@ void sgm( int ndisp,
     int width = im1.width;
     int height = im1.height;
 
+    int npix = width;
+    int *unravel = new int[2*npix];
+
     for ( int irow = 0; irow < height; ++irow ) { 
-        int npix = width;
-        unsigned char *ref   = im1.data + irow*width;
-        unsigned char *match = im2.data + irow*width;
-        unsigned char *out   = disp.data + irow*width;
-        sgmscan(ndisp,mindisp,p1,p2,npix,ref,match,out);
+        //unsigned char *ref   = im1.data + irow*width;
+        //unsigned char *match = im2.data + irow*width;
+        //unsigned char *out   = disp.data + irow*width;
+        unsigned char *ref   = im1.data;
+        unsigned char *match = im2.data;
+        unsigned char *out   = disp.data;
+        for ( int icol = 0; icol < width; ++icol ) {
+            unravel[2*icol+0] = irow;
+            unravel[2*icol+1] = icol;
+        }
+        sgmscan(ndisp,mindisp,p1,p2,width,unravel,npix,ref,match,out);
         std::cout << "\r done row " << irow+1 << " of " << height << std::flush;
     }
     std::cout << std::endl;
+
+    delete[] unravel;
 
 
 }
