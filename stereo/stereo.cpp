@@ -226,6 +226,42 @@ void patchnxcorr( int rad, im_t &im1, im_t &im2, im_t &disp ) {
 
 }
 
+void generate_directed_grid( int dx, int dy, int width, int height ) {
+
+    // Generate top and left starting rays
+    {
+        int startx, starty;
+        int posx, posy;
+        for ( int icol = 0; icol < width; ++icol ) {
+            startx = icol;
+            starty = 0;
+            int totalwid = width - startx;
+            int totalhgt = hgt - starty;
+            for ( posx, posy ) {
+            }
+        }
+        for ( int irow = 0; irow < height; ++irow ) {
+        }
+    }
+
+
+    int startx, starty;
+
+    startx = dx < 0 ? width-1 : 0;
+    starty = dy < 0 ? height-1 : 0;
+
+    int posx, posy;
+
+    while ( posx >= 0 && posx < width &&
+            posy >= 0 && posy < height ) {
+
+        posx += dx;
+        posy += dy;
+
+    }
+
+}
+
 void sgm_scan(int ndisp,
         int mindisp,
         int p1,
