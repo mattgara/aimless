@@ -128,11 +128,11 @@ void generate_y_grid( int width, int height,
 
 }
 
-void generate_xy_grid( int width, int height,
+void generate_yx_grid( int width, int height,
        std::vector< std::vector< int > > &rays,
        std::vector< std::vector< int > > &idx2ray,
-       int dx,
        int dy,
+       int dx,
        bool flipy = false,
        bool flipx = false ) {
 
@@ -293,13 +293,17 @@ void sgm( int ndisp,
     unsigned char *match = im2.data;
     unsigned char *out   = disp.data;
 
-    //Create a 4 ray supported SGM algorithm to test if it works
+    //Create a 8 ray supported SGM algorithm to test if it works
     std::vector< std::vector<int> > rays;
     std::vector< std::vector<int> > idx2ray(width*height);
     generate_x_grid(width,height,rays,idx2ray);
     generate_x_grid(width,height,rays,idx2ray,true);
     generate_y_grid(width,height,rays,idx2ray);
     generate_y_grid(width,height,rays,idx2ray,true);
+    generate_yx_grid(width,height,rays,idx2ray,1,1,false,false);
+    generate_yx_grid(width,height,rays,idx2ray,1,1,true,false);
+    generate_yx_grid(width,height,rays,idx2ray,1,1,true,true);
+    generate_yx_grid(width,height,rays,idx2ray,1,1,false,true);
 
     std::vector< std::vector<int> > energies(rays.size());
 
