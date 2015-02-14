@@ -3,6 +3,9 @@
 #include <cstdlib>
 #include <cmath>
 #include <climits>
+#include <vector>
+#include <stdexcept>
+#include <cassert>
 
 
 void readpgm( const std::string &fn,
@@ -226,41 +229,98 @@ void patchnxcorr( int rad, im_t &im1, im_t &im2, im_t &disp ) {
 
 }
 
-void generate_directed_grid( int dx, int dy, int width, int height ) {
+void generate_x_grid( int width, int height,
+       std::vector< std::vector< int > > &rays,
+       std::vector< std::vector< int > > &idx2ray,
+       bool flip = false ) {
 
-    // Generate top and left starting rays
-    {
-        int startx, starty;
-        int posx, posy;
+    for ( int irow = 0; irow < height; ++irow ) {
+        size_t rayidx = rays.size();
+        std::vector<int> ray;
         for ( int icol = 0; icol < width; ++icol ) {
-            startx = icol;
-            starty = 0;
-            int totalwid = width - startx;
-            int totalhgt = hgt - starty;
-            for ( posx, posy ) {
-            }
+            int y = irow;
+            int x = flip ? width - icol - 1 : icol;
+            ray.push_back(y);
+            ray.push_back(x);
+            int idx = y * width + x;
+            idx2ray[idx].push_back(rayidx);
         }
-        for ( int irow = 0; irow < height; ++irow ) {
-        }
-    }
-
-
-    int startx, starty;
-
-    startx = dx < 0 ? width-1 : 0;
-    starty = dy < 0 ? height-1 : 0;
-
-    int posx, posy;
-
-    while ( posx >= 0 && posx < width &&
-            posy >= 0 && posy < height ) {
-
-        posx += dx;
-        posy += dy;
-
+        rays.push_back(ray); //FIXME: Alot of copying
     }
 
 }
+
+void generate_y_grid( int width, int height,
+       std::vector< std::vector< int > > &rays,
+       std::vector< std::vector< int > > &idx2ray,
+       bool flip = false ) {
+
+    for ( int icol = 0; icol < width; ++icol ) {
+        size_t rayidx = rays.size();
+        std::vector<int> ray;
+        for ( int irow = 0; irow < height; ++irow ) {
+            int x = icol;
+            int y = flip ? height - irow - 1 : irow;
+            ray.push_back(y);
+            ray.push_back(x);
+            //std::cout << " pushing back x,y: " << x << ", " << y << std::endl;
+            int idx = y * width + x;
+            idx2ray[idx].push_back(rayidx);
+        }
+        rays.push_back(ray); //FIXME: Alot of copying
+    }
+
+}
+
+void generate_xy_grid( int width, int height,
+       std::vector< std::vector< int > > &rays,
+       std::vector< std::vector< int > > &idx2ray,
+       int dx,
+       int dy,
+       bool flipy = false,
+       bool flipx = false ) {
+
+    if ( dx <= 0 || dy <= 0 ) {
+        throw std::invalid_argument("dx and dy must be positive and greater than zero.");
+    }
+
+    for ( int icol = 0; icol < width; ++icol ) {
+        size_t rayidx = rays.size();
+        std::vector<int> ray;
+        int posx, posy;
+        for ( posx = icol, posy = 0;
+                posx < width && posy < height; 
+                posx += dx, posy += dy ) {
+            int x = flipx ? width - posx - 1 : posx;
+            int y = flipy ? height - posy  - 1 : posy;
+            ray.push_back(y);
+            ray.push_back(x);
+            int idx = y * width + x;
+            idx2ray[idx].push_back(rayidx);
+        }
+        rays.push_back(ray); //FIXME: Alot of copying
+    }
+
+    for ( int irow = 1; irow < height; ++irow ) {
+        size_t rayidx = rays.size();
+        std::vector<int> ray;
+        int posx, posy;
+        for ( posx = 0, posy = irow;
+                posx < width && posy < height; 
+                posx += dx, posy += dy ) {
+            int x = flipx ? width - posx - 1 : posx;
+            int y = flipy ? height - posy  - 1 : posy;
+            ray.push_back(y);
+            ray.push_back(x);
+            int idx = y * width + x;
+            idx2ray[idx].push_back(rayidx);
+        }
+        rays.push_back(ray); //FIXME: Alot of copying
+    }
+
+}
+
+
 
 void sgm_scan(int ndisp,
         int mindisp,
@@ -297,7 +357,7 @@ void sgm_scan(int ndisp,
         int refx = unravel[1];
         int matchposx = refx+displut[idisp];
         int matchposy = refy;
-        if ( matchposx >= 0 && matchposx < npix ) {
+        if ( matchposx >= 0 && matchposx < width ) { /* epipolar line scans only */
             matrix[idisp] = std::abs((int)(ref[refy*width+refx])-
                     (int)(match[matchposy*width+matchposx]));
         } else {
@@ -307,6 +367,7 @@ void sgm_scan(int ndisp,
     }
     
     for ( int ipix = 1; ipix < npix; ++ipix ) {
+        int rejectioncount = 0;
         for ( int idisp = 0; idisp < ndisp; ++idisp ) {
             int refy = unravel[2*ipix+0];
             int refx = unravel[2*ipix+1];
@@ -314,13 +375,14 @@ void sgm_scan(int ndisp,
             int matchposy = refy;
             //int matchpos = ipix+displut[idisp];
             int dataterm = INT_MAX;
-            if ( matchposx >= 0 && matchposx < npix ) {
+            if ( matchposx >= 0 && matchposx < width ) { /* epipolar line scans only */
                 //dataterm = std::abs((int)(ref[ipix])-(int)(match[matchpos]));
                 dataterm = std::abs((int)(ref[refy*width+refx])-
                         (int)(match[matchposy*width+matchposx]));
             } else {
                 matrix[ipix*ndisp + idisp] = -1; /* Negative values will indicate invalid matching */
                 pathmatrix[ipix*ndisp + idisp] = -1;
+                rejectioncount++;
                 continue;
             }
             int mintotalterm = INT_MAX;
@@ -357,6 +419,7 @@ void sgm_scan(int ndisp,
             matrix[ipix*ndisp + idisp ] = mintotalterm;
             pathmatrix[ipix*ndisp + idisp ] = minidx;
         }
+        assert(rejectioncount < ndisp);
     }
 
     // Decode from optimal
@@ -379,6 +442,7 @@ void sgm_scan(int ndisp,
 
     for ( int ipix = npix-2; ipix >= 0; --ipix ) {
         _out[ipix] = pathmatrix[ (ipix+1)*ndisp + _out[ipix+1] ];
+        assert( _out[ipix] >= 0 );
     }
 
     for ( int ipix = 0; ipix < npix; ++ipix ) {
@@ -438,25 +502,30 @@ void sgm( int ndisp,
     std::cout << std::endl;
 
 #else
-    
-    int npix = height;
-    int *unravel = new int[2*npix];
-    for ( int icol = 0; icol < width; ++icol ) { 
+
+    std::vector< std::vector<int> > rays;
+    std::vector< std::vector<int> > ray2idx(width*height);
+
+    generate_xy_grid(width,height,rays,ray2idx,1,1,true,false);
+
+    for ( size_t i = 0; i < rays.size(); ++i ) {
+        std::vector<int> &ray = rays[i];
+        int *unravel = &rays[i][0];
+        int npix = rays[i].size()/2;
         unsigned char *ref   = im1.data;
         unsigned char *match = im2.data;
         unsigned char *out   = disp.data;
-        for ( int ipix = 0; ipix < npix; ++ipix ) {
-            unravel[2*ipix+0] = ipix;
-            unravel[2*ipix+1] = icol;
-        }
         sgm_scan(ndisp,mindisp,p1,p2,width,unravel,npix,ref,match,out);
-        std::cout << "\r done scan " << icol+1 << " of " << width << std::flush;
+        if ( (i+1) % 50 == 0 ) {  /* Don't print too much */
+            std::cout << "\r done scan " << i+1 << " of " << rays.size() << std::flush;
+        }
+
     }
+    
     std::cout << std::endl;
 
 #endif
 
-    delete[] unravel;
 
 
 }

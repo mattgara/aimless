@@ -1,2 +1,2 @@
 stereo: stereo.cpp
-	$(CXX) stereo.cpp -O2 -o stereo
+	$(CXX) stereo.cpp -O3 -o stereo
