@@ -293,17 +293,26 @@ void sgm( int ndisp,
     unsigned char *match = im2.data;
     unsigned char *out   = disp.data;
 
-    //Create a 8 ray supported SGM algorithm to test if it works
+    //Create a 16 ray supported SGM algorithm to test if it works
+    //Currently commented out in favor of 4 ray version.
     std::vector< std::vector<int> > rays;
     std::vector< std::vector<int> > idx2ray(width*height);
     generate_x_grid(width,height,rays,idx2ray);
     generate_x_grid(width,height,rays,idx2ray,true);
     generate_y_grid(width,height,rays,idx2ray);
     generate_y_grid(width,height,rays,idx2ray,true);
-    generate_yx_grid(width,height,rays,idx2ray,1,1,false,false);
-    generate_yx_grid(width,height,rays,idx2ray,1,1,true,false);
-    generate_yx_grid(width,height,rays,idx2ray,1,1,true,true);
-    generate_yx_grid(width,height,rays,idx2ray,1,1,false,true);
+    //generate_yx_grid(width,height,rays,idx2ray,1,1,false,false);
+    //generate_yx_grid(width,height,rays,idx2ray,1,1,true,false);
+    //generate_yx_grid(width,height,rays,idx2ray,1,1,true,true);
+    //generate_yx_grid(width,height,rays,idx2ray,1,1,false,true);
+    //generate_yx_grid(width,height,rays,idx2ray,2,1,false,false);
+    //generate_yx_grid(width,height,rays,idx2ray,2,1,true,false);
+    //generate_yx_grid(width,height,rays,idx2ray,2,1,true,true);
+    //generate_yx_grid(width,height,rays,idx2ray,2,1,false,true);
+    //generate_yx_grid(width,height,rays,idx2ray,1,2,false,false);
+    //generate_yx_grid(width,height,rays,idx2ray,1,2,true,false);
+    //generate_yx_grid(width,height,rays,idx2ray,1,2,true,true);
+    //generate_yx_grid(width,height,rays,idx2ray,1,2,false,true);
 
     std::vector< std::vector<int> > energies(rays.size());
 
