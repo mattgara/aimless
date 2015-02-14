@@ -99,6 +99,7 @@ void generate_x_grid( int width, int height,
             ray.push_back(x);
             int idx = y * width + x;
             idx2ray[idx].push_back(rayidx);
+            idx2ray[idx].push_back(ray.size()/2); /* the current idx into ray */
         }
         rays.push_back(ray); //FIXME: Alot of copying
     }
@@ -120,6 +121,7 @@ void generate_y_grid( int width, int height,
             ray.push_back(x);
             int idx = y * width + x;
             idx2ray[idx].push_back(rayidx);
+            idx2ray[idx].push_back(ray.size()/2); /* the current idx into ray */
         }
         rays.push_back(ray); //FIXME: Alot of copying
     }
@@ -151,6 +153,7 @@ void generate_xy_grid( int width, int height,
             ray.push_back(x);
             int idx = y * width + x;
             idx2ray[idx].push_back(rayidx);
+            idx2ray[idx].push_back(ray.size()/2); /* the current idx into ray */
         }
         rays.push_back(ray); //FIXME: Alot of copying
     }
@@ -168,6 +171,7 @@ void generate_xy_grid( int width, int height,
             ray.push_back(x);
             int idx = y * width + x;
             idx2ray[idx].push_back(rayidx);
+            idx2ray[idx].push_back(ray.size()/2); /* the current idx into ray */
         }
         rays.push_back(ray); //FIXME: Alot of copying
     }
@@ -185,13 +189,7 @@ void sgm_scan(int ndisp,
         int npix,
         unsigned char *ref,
         unsigned char *match,
-        unsigned char *out ) {
-
-    int* matrix = new int[ndisp*npix];
-    std::fill(matrix,matrix+ndisp*npix,0); /* May be not required. */
-
-    int* pathmatrix = new int[ndisp*npix];
-    std::fill(pathmatrix,pathmatrix+ndisp*npix,0); /* May be not required. */
+        int *energymatrix /* Preallocated */ ) {
 
     int* displut = new int[ndisp];
     int* dispdifflut = new int[ndisp*ndisp];
@@ -212,12 +210,11 @@ void sgm_scan(int ndisp,
         int matchposx = refx+displut[idisp];
         int matchposy = refy;
         if ( matchposx >= 0 && matchposx < width ) { /* epipolar line scans only */
-            matrix[idisp] = std::abs((int)(ref[refy*width+refx])-
+            energymatrix[idisp] = std::abs((int)(ref[refy*width+refx])-
                     (int)(match[matchposy*width+matchposx]));
         } else {
-            matrix[idisp] = -1; /* Negative values will indicate invalid matching */
+            energymatrix[idisp] = -1; /* Negative values will indicate invalid matching */
         }
-        pathmatrix[idisp] = -1;
     }
     
     for ( int ipix = 1; ipix < npix; ++ipix ) {
@@ -232,20 +229,17 @@ void sgm_scan(int ndisp,
                 dataterm = std::abs((int)(ref[refy*width+refx])-
                         (int)(match[matchposy*width+matchposx]));
             } else {
-                matrix[ipix*ndisp + idisp] = -1; /* Negative values will indicate invalid matching */
-                pathmatrix[ipix*ndisp + idisp] = -1;
+                energymatrix[ipix*ndisp + idisp] = -1; /* Negative values will indicate invalid matching */
                 rejectioncount++;
                 continue;
             }
             int mintotalterm = INT_MAX;
-            int minidx = -1;
             for ( int idispprev = 0; idispprev < ndisp; ++idispprev ) {
                 int smoothterm = -1;
-                int v = matrix[ (ipix-1)*ndisp + idispprev ];
+                int v = energymatrix[ (ipix-1)*ndisp + idispprev ];
                 if ( v < 0 ) {
                     continue;
                 }
-
 
                 // mg: According to profiling, the line below is incredibly slow,
                 // thus recommend a lut to replace for speed.
@@ -264,51 +258,14 @@ void sgm_scan(int ndisp,
 
                 if ( totalterm  < mintotalterm ) {
                     mintotalterm = totalterm;
-                    minidx = idispprev;
                 }
 
             }
-            matrix[ipix*ndisp + idisp ] = mintotalterm;
-            pathmatrix[ipix*ndisp + idisp ] = minidx;
+            energymatrix[ipix*ndisp + idisp ] = mintotalterm;
         }
         assert(rejectioncount < ndisp);
     }
 
-    // Decode from optimal
-    int minenergy = INT_MAX;
-    int minenergyidx = -1;
-    for ( int idisp = 0; idisp < ndisp; ++idisp ) {
-        int energy = matrix[(npix-1)*ndisp + idisp ];
-        if ( energy < 0 ) {
-            continue;
-        }
-        if ( energy < minenergy ) {
-            minenergy = energy;
-            minenergyidx = idisp;
-        }
-    }
-
-    int *_out = new int[npix];
-
-    _out[npix-1] = minenergyidx;
-
-    for ( int ipix = npix-2; ipix >= 0; --ipix ) {
-        _out[ipix] = pathmatrix[ (ipix+1)*ndisp + _out[ipix+1] ];
-        assert( _out[ipix] >= 0 );
-    }
-
-    for ( int ipix = 0; ipix < npix; ++ipix ) {
-        int y = unravel[2*ipix + 0];
-        int x = unravel[2*ipix + 1];
-        out[y*width+x] = _out[ipix];
-    }
-    
-
-    delete[] _out;
-
-
-    delete[] matrix;
-    delete[] pathmatrix;
     delete[] displut;
     delete[] dispdifflut;
 
@@ -332,28 +289,76 @@ void sgm( int ndisp,
     int width = im1.width;
     int height = im1.height;
 
+    unsigned char *ref   = im1.data;
+    unsigned char *match = im2.data;
+    unsigned char *out   = disp.data;
 
-
+    //Create a 4 ray supported SGM algorithm to test if it works
     std::vector< std::vector<int> > rays;
     std::vector< std::vector<int> > idx2ray(width*height);
+    generate_x_grid(width,height,rays,idx2ray);
+    generate_x_grid(width,height,rays,idx2ray,true);
+    generate_y_grid(width,height,rays,idx2ray);
+    generate_y_grid(width,height,rays,idx2ray,true);
 
-    generate_xy_grid(width,height,rays,idx2ray,1,1,true,false);
+    std::vector< std::vector<int> > energies(rays.size());
 
     for ( size_t i = 0; i < rays.size(); ++i ) {
         std::vector<int> &ray = rays[i];
         int *unravel = &rays[i][0];
         int npix = rays[i].size()/2;
-        unsigned char *ref   = im1.data;
-        unsigned char *match = im2.data;
-        unsigned char *out   = disp.data;
-        sgm_scan(ndisp,mindisp,p1,p2,width,unravel,npix,ref,match,out);
-        if ( (i+1) % 50 == 0 ) {  /* Don't print too much */
+        energies[i].resize(npix*ndisp); /* The ith energy, corresponding to this ray. */
+        sgm_scan(ndisp,mindisp,p1,p2,width,unravel,npix,ref,match,&energies[i][0]);
+        if ( (i+1) % 15 == 0 ) {  /* Don't print too much */
             std::cout << "\r done scan " << i+1 << " of " << rays.size() << std::flush;
         }
 
     }
-    
     std::cout << std::endl;
+
+    std::cout << " decoding image: " << std::endl;
+
+    //Decode the image in 2D, this requires taking the min of the energy for 
+    //each incident ray over all disparities
+    for ( int irow = 0; irow < height; ++irow ) {
+        for ( int icol = 0; icol < width; ++icol ) {
+
+            size_t idx = irow * width + icol;
+            size_t nrays = idx2ray[idx].size()/2;
+
+            int minenergy = INT_MAX;
+            int mindisp  = -1;
+            for ( int idisp = 0; idisp < ndisp; ++idisp ) {
+                int energy = 0;
+                bool dispinvalid = false;
+                for ( size_t iray = 0; iray < nrays; ++iray ) {
+                    int rayidx   = idx2ray[idx][2*iray+0]; /* Tells us which energy */
+                    int idxinray = idx2ray[idx][2*iray+1]; /* Tells us where to look within energy */
+                    int rayenergy = energies[rayidx][ndisp*idxinray + idisp];
+                    if ( rayenergy < 0 ) {
+                        dispinvalid = true;
+                        break;
+                    }
+                    energy += rayenergy; /* Add the minimum energy of this ray */
+                }
+                if ( dispinvalid ) {
+                    continue; /* If disparity is invalid do not allow. */
+                }
+                if ( energy < minenergy ) {
+                    minenergy = energy;
+                    mindisp = idisp;
+                }
+            }
+            assert(mindisp >= 0);
+
+            out[idx] = mindisp;
+
+        }
+        std::cout << "\r done row " << irow+1 << " of " << height << std::flush;
+    }
+    std::cout << std::endl;
+
+    
 
 
 
