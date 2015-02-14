@@ -95,11 +95,11 @@ void generate_x_grid( int width, int height,
         for ( int icol = 0; icol < width; ++icol ) {
             int y = irow;
             int x = flip ? width - icol - 1 : icol;
-            ray.push_back(y);
-            ray.push_back(x);
             int idx = y * width + x;
             idx2ray[idx].push_back(rayidx);
             idx2ray[idx].push_back(ray.size()/2); /* the current idx into ray */
+            ray.push_back(y);
+            ray.push_back(x);
         }
         rays.push_back(ray); //FIXME: Alot of copying
     }
@@ -117,11 +117,11 @@ void generate_y_grid( int width, int height,
         for ( int irow = 0; irow < height; ++irow ) {
             int x = icol;
             int y = flip ? height - irow - 1 : irow;
-            ray.push_back(y);
-            ray.push_back(x);
             int idx = y * width + x;
             idx2ray[idx].push_back(rayidx);
             idx2ray[idx].push_back(ray.size()/2); /* the current idx into ray */
+            ray.push_back(y);
+            ray.push_back(x);
         }
         rays.push_back(ray); //FIXME: Alot of copying
     }
@@ -149,11 +149,11 @@ void generate_yx_grid( int width, int height,
                 posx += dx, posy += dy ) {
             int x = flipx ? width - posx - 1 : posx;
             int y = flipy ? height - posy  - 1 : posy;
-            ray.push_back(y);
-            ray.push_back(x);
             int idx = y * width + x;
             idx2ray[idx].push_back(rayidx);
             idx2ray[idx].push_back(ray.size()/2); /* the current idx into ray */
+            ray.push_back(y);
+            ray.push_back(x);
         }
         rays.push_back(ray); //FIXME: Alot of copying
     }
@@ -167,11 +167,11 @@ void generate_yx_grid( int width, int height,
                 posx += dx, posy += dy ) {
             int x = flipx ? width - posx - 1 : posx;
             int y = flipy ? height - posy  - 1 : posy;
-            ray.push_back(y);
-            ray.push_back(x);
             int idx = y * width + x;
             idx2ray[idx].push_back(rayidx);
             idx2ray[idx].push_back(ray.size()/2); /* the current idx into ray */
+            ray.push_back(y);
+            ray.push_back(x);
         }
         rays.push_back(ray); //FIXME: Alot of copying
     }
@@ -338,6 +338,10 @@ void sgm( int ndisp,
                 for ( size_t iray = 0; iray < nrays; ++iray ) {
                     int rayidx   = idx2ray[idx][2*iray+0]; /* Tells us which energy */
                     int idxinray = idx2ray[idx][2*iray+1]; /* Tells us where to look within energy */
+                    {
+                    int lookupidx =  ndisp*idxinray + idisp;
+                    assert( lookupidx >= 0 && lookupidx < ndisp*rays[rayidx].size()/2 );
+                    }
                     int rayenergy = energies[rayidx][ndisp*idxinray + idisp];
                     if ( rayenergy < 0 ) {
                         dispinvalid = true;
@@ -404,7 +408,9 @@ int main( int argc, char *argv[] ) {
             disp.height);
 
 
-    delete[] im1.data, im2.data, disp.data;
+    delete[] im1.data;
+    delete[] im2.data;
+    delete[] disp.data;
 
 
     return 0;
