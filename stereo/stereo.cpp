@@ -84,151 +84,6 @@ typedef struct _im {
 
 } im_t;
 
-#define CORR_ALGO_NCC 
-
-void patchnxcorr( int rad, im_t &im1, im_t &im2, im_t &disp ) {
-
-    if ( !(im1.width == im2.width && im1.height == im2.height  ) ) {
-        std::cerr << " Images are not same dimensions." << std::endl;
-        exit(-1);
-    }
-
-    int width = im1.width;
-    int height = im1.height;
-
-    int disparityrange = width;
-
-    int sz = 2*rad+1;
-    unsigned char *cache = new unsigned char[sz*sz];
-
-    // Loop over all scan lines
-    for ( int irow = 0; irow < height; ++irow ) { 
-
-        for ( int icol = 0; icol < width; ++icol ) { 
-
-            for ( int rrow = -rad; rrow <= rad; ++rrow ) {
-                for ( int rcol = -rad; rcol <= rad; ++rcol ) {
-                    int r = irow + rrow; 
-                    int c = icol + rcol;
-                    if ( r < 0 || r >= height || c < 0 || c >= width ) {
-                        int pr = rrow + rad;
-                        int pc = rcol + rad;
-                        cache[pr*sz+pc] = 0;
-                        continue;
-                    }
-                    int pr = rrow + rad;
-                    int pc = rcol + rad;
-                    cache[pr*sz+pc] = im2.data[r*width+c];
-                }
-            }
-
-#ifdef CORR_ALGO_NCC
-            double maxncc = 0;
-#else 
-            int minssd = 0;
-#endif
-
-            int minidx = -1;
-
-            for ( int scol = std::max(0,icol - disparityrange);
-                    scol < std::min(width,icol+disparityrange); ++scol ) { 
-
-#ifdef CORR_ALGO_NCC
-                double ncc = 0;
-                double mean1 = 0;
-                double mean2 = 0;
-                double std1 = 0;
-                double std2 = 0;
-                double xcorr = 0;
-#else 
-                int ssd = 0;
-#endif
-
-#ifdef CORR_ALGO_NCC
-                for ( int rrow = -rad; rrow <= rad; ++rrow ) {
-                    for ( int rcol = -rad; rcol <= rad; ++rcol ) {
-                        int r = irow + rrow; 
-                        int c = scol + rcol;
-                        int pr = rrow + rad;
-                        int pc = rcol + rad;
-                        mean2 += cache[pr*sz+pc];
-                        if ( r < 0 || r >= height || c < 0 || c >= width ) {
-                            continue;
-                        }
-                        mean1 += im1.data[r*width+c];
-                    }
-                }
-                mean1 /= sz*sz;
-                mean2 /= sz*sz;
-                for ( int rrow = -rad; rrow <= rad; ++rrow ) {
-                    for ( int rcol = -rad; rcol <= rad; ++rcol ) {
-                        int r = irow + rrow; 
-                        int c = scol + rcol;
-                        int pr = rrow + rad;
-                        int pc = rcol + rad;
-                        double v2 = cache[pr*sz+pc] - mean2;
-                        std2 += v2*v2;
-                        double e;
-                        if ( r < 0 || r >= height || c < 0 || c >= width ) {
-                            e = 0;
-                        } else {
-                            e = im1.data[r*width+c];
-                        }
-                        double v1 =  e - mean1;
-                        std1 += v1*v1;
-                        xcorr += v1 * v2;
-                    }
-                }
-                std1 = std::sqrt(std1);
-                std2 = std::sqrt(std2);
-                ncc = xcorr / std1 / std2;
-
-                //std::cout << " ncc: " << ncc << std::endl;
-
-                if ( minidx < 0 || ncc > maxncc ) {
-                    maxncc = ncc;
-                    minidx = scol;
-                }
-
-#else
-                for ( int rrow = -rad; rrow <= rad; ++rrow ) {
-                    for ( int rcol = -rad; rcol <= rad; ++rcol ) {
-                        int r = irow + rrow; 
-                        int c = scol + rcol;
-                        int pr = rrow + rad;
-                        int pc = rcol + rad;
-                        int delta;
-                        if ( r < 0 || r >= height || c < 0 || c >= width ) {
-                            delta =  (int)cache[pr*sz+pc];
-                            ssd   += delta * delta;
-                            continue;
-                        }
-                        delta = (int)cache[pr*sz+pc] - (int)im1.data[r*width+c];
-                        ssd += delta*delta;
-                    }
-                }
-
-                if ( minidx < 0 || ssd < minssd ) {
-                    minssd = ssd;
-                    minidx = scol;
-                }
-#endif
-
-            }
-
-            //int disparity = icol - minidx;
-            //std::cout << " disparity: " << disparity << std::endl;
-
-            disp.data[irow*width + icol] = (icol-minidx) / 16 + 127.;
-
-
-        }
-
-
-    }
-
-}
-
 void generate_x_grid( int width, int height,
        std::vector< std::vector< int > > &rays,
        std::vector< std::vector< int > > &idx2ray,
@@ -263,7 +118,6 @@ void generate_y_grid( int width, int height,
             int y = flip ? height - irow - 1 : irow;
             ray.push_back(y);
             ray.push_back(x);
-            //std::cout << " pushing back x,y: " << x << ", " << y << std::endl;
             int idx = y * width + x;
             idx2ray[idx].push_back(rayidx);
         }
@@ -373,10 +227,8 @@ void sgm_scan(int ndisp,
             int refx = unravel[2*ipix+1];
             int matchposx = refx+displut[idisp];
             int matchposy = refy;
-            //int matchpos = ipix+displut[idisp];
             int dataterm = INT_MAX;
             if ( matchposx >= 0 && matchposx < width ) { /* epipolar line scans only */
-                //dataterm = std::abs((int)(ref[ipix])-(int)(match[matchpos]));
                 dataterm = std::abs((int)(ref[refy*width+refx])-
                         (int)(match[matchposy*width+matchposx]));
             } else {
@@ -481,32 +333,11 @@ void sgm( int ndisp,
     int height = im1.height;
 
 
-#if 0
-
-    int npix = width;
-    int *unravel = new int[2*npix];
-    for ( int irow = 0; irow < height; ++irow ) { 
-        //unsigned char *ref   = im1.data + irow*width;
-        //unsigned char *match = im2.data + irow*width;
-        //unsigned char *out   = disp.data + irow*width;
-        unsigned char *ref   = im1.data;
-        unsigned char *match = im2.data;
-        unsigned char *out   = disp.data;
-        for ( int icol = 0; icol < width; ++icol ) {
-            unravel[2*icol+0] = irow;
-            unravel[2*icol+1] = icol;
-        }
-        sgm_scan(ndisp,mindisp,p1,p2,width,unravel,npix,ref,match,out);
-        std::cout << "\r done row " << irow+1 << " of " << height << std::flush;
-    }
-    std::cout << std::endl;
-
-#else
 
     std::vector< std::vector<int> > rays;
-    std::vector< std::vector<int> > ray2idx(width*height);
+    std::vector< std::vector<int> > idx2ray(width*height);
 
-    generate_xy_grid(width,height,rays,ray2idx,1,1,true,false);
+    generate_xy_grid(width,height,rays,idx2ray,1,1,true,false);
 
     for ( size_t i = 0; i < rays.size(); ++i ) {
         std::vector<int> &ray = rays[i];
@@ -524,8 +355,6 @@ void sgm( int ndisp,
     
     std::cout << std::endl;
 
-#endif
-
 
 
 }
@@ -534,7 +363,6 @@ void sgm( int ndisp,
 int main( int argc, char *argv[] ) {
 
 
-    //int rad = 7;
     im_t im1, im2, disp;
 
     std::cout << " Reading im1 " << std::endl;
@@ -553,7 +381,6 @@ int main( int argc, char *argv[] ) {
     disp.height = im1.height;
     disp.data   = new unsigned char[disp.width*disp.height];
 
-    //patchnxcorr(rad,im1,im2,disp);
     int ndisp = 128;
     int mindisp = -(ndisp-1);
     int p1 = 10;
