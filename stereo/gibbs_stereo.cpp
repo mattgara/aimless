@@ -153,12 +153,7 @@ void block_gibbs_iter( bool smooth,
 
     double* prob = new double[ndisp];
 
-    double D = 1/ 255.; /* A normalizer */
-    if ( smooth ) {
-        D *= 1./(double)p2;
-    }
-
-    D = 1/20.;
+    double D = 1/ 20.; /* A normalizer */
 
     for ( int irow = 0; irow < height; ++irow ) {
         int shift = (partition + irow) % 2; /* 0 or 1 aternating between rows */
