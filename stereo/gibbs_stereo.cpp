@@ -6,7 +6,8 @@
 #include <vector>
 #include <stdexcept>
 #include <cassert>
-
+#include <ctime>
+#include <omp.h>
 
 void readpgm( const std::string &fn,
         unsigned char* &data,
@@ -84,14 +85,14 @@ typedef struct _im {
 
 } im_t;
 
-inline int smoothing_term( int *displut, unsigned char *disp, int width, int
-        height, int y, int x, int thisdisp, int p1, int p2 ) {
+inline double smoothing_term( int *displut, unsigned char *disp, int width, int
+        height, int y, int x, int thisdisp, double p1, double p2 ) {
 
     if ( y < 0 || y >= height || x < 0 || x >= width ) {
         return 0; /* TODO: Is this the correct behaviour? */
     }
 
-    int smoothterm = 0;
+    double smoothterm = 0;
     int absdisp = std::abs(displut[disp[y*width+x]] - thisdisp);
     if ( absdisp == 0 ) {
         smoothterm = 0;
@@ -112,16 +113,10 @@ inline int sample_distribution( int n, double *prob, double norm ) {
 
     int reti = -1;
 
-    //std::cout << " prob: ";
-    //for ( int i = 0; i < n; ++i ) {
-    //    double p = prob[i] * invnorm;
-    //    std::cout << p << ", ";
-    //}
-    //std::cout << std::endl;
-
     for ( int i = 0; i < n; ++i ) {
         cumsum += prob[i] * invnorm;
-        if ( unirand < cumsum ) { /* This must eventually be true of any prob. dist. */
+        if ( unirand <= cumsum ) { /* This must eventually be true of any prob.
+                                      dist. */
             reti = i;
             break;
         }
@@ -133,50 +128,103 @@ inline int sample_distribution( int n, double *prob, double norm ) {
 
 }
 
-
-void block_gibbs_iter( bool smooth,
-        int partition, /* 0 or 1 */
-        int ndisp,
+double calculate_energy( int ndisp,
         int mindisp,
-        int p1,
-        int p2,
+        double p1,
+        double p2,
+        double temperature,
         int width, /* Image width */
         int height, /* Image width */
         unsigned char *ref,
         unsigned char *match,
-        unsigned char *disp /* Disparity */ ) {
+        unsigned char *disp /* Disparity */) {
 
     int* displut = new int[ndisp];
     for ( int idisp = 0; idisp < ndisp; ++idisp ) {
         displut[idisp] = idisp + mindisp; 
     }
 
-    double* prob = new double[ndisp];
+    const double invtemperature = 1/temperature;
 
-    double D = 1/ 20.; /* A normalizer */
-
+    double energy = 0;
     for ( int irow = 0; irow < height; ++irow ) {
+        for ( int icol = 0; icol < width; ++icol ) {
+            int refidx = irow * width + icol;
+            int thisdisp = disp[irow*width + icol];
+            int matchx = icol + thisdisp;
+            if ( matchx < 0 || matchx >= width ) {
+                continue;
+            }
+            int matchidx = irow*width + matchx;
+            double dataterm = std::abs((int)(ref[refidx]) - (int)(match[matchidx])) * invtemperature ;
+            double smoothterm = 0;
+            smoothterm += smoothing_term(displut,disp,width,height,irow+1,icol,thisdisp,p1,p2);
+            smoothterm += smoothing_term(displut,disp,width,height,irow,icol+1,thisdisp,p1,p2);
+            energy += dataterm + smoothterm;
+        }
+    }
+
+    delete[] displut;
+
+    return energy;
+
+}
+
+
+void block_gibbs_iter( bool smooth,
+        int partition, /* 0 or 1 */
+        int ndisp,
+        int mindisp,
+        double p1,
+        double p2,
+        double temperature,
+        int width, /* Image width */
+        int height, /* Image width */
+        unsigned char *ref,
+        unsigned char *match,
+        unsigned char *disp /* Disparity */) {
+
+
+    int* displut = new int[ndisp];
+    for ( int idisp = 0; idisp < ndisp; ++idisp ) {
+        displut[idisp] = idisp + mindisp; 
+    }
+
+    const double invtemperature = 1/temperature;
+
+
+
+    int nthread = 1;
+#pragma omp parallel
+    {
+        nthread = omp_get_num_threads();
+    }
+    double **probs = new double*[nthread];
+    for ( int i = 0; i < nthread; ++i ){
+        probs[i] = new double[ndisp];
+    }
+#pragma omp parallel for
+    for ( int irow = 0; irow < height; ++irow ) {
+        int omptid = omp_get_thread_num();
+        double* prob = probs[omptid];
         int shift = (partition + irow) % 2; /* 0 or 1 aternating between rows */
         for ( int icol = shift; icol < width; icol += 2 ) {
             int refidx = irow * width + icol; /* Every second element */
-            int maxenergy, minenergy;
-            int numrejected = 0;
-            maxenergy = INT_MIN;
-            minenergy = INT_MAX;
+
+            
             //Need to compute the energy for every possible disparity:
             for ( int idisp = 0; idisp < ndisp; ++idisp ) {
                 int thisdisp = displut[idisp];
                 int matchx = icol + thisdisp;
                 if ( matchx < 0 || matchx >= width ) {
                     prob[idisp] = -1;
-                    numrejected++;
                     continue;
                 }
                 int matchidx = irow*width + matchx;
-                int dataterm = std::abs((int)(ref[refidx]) - (int)(match[matchidx]));
+                double dataterm = std::abs((int)(ref[refidx]) - (int)(match[matchidx])) * invtemperature;
 
                 //Smoothing term of the four neighbours.
-                int smoothterm = 0;
+                double smoothterm = 0;
                 if ( smooth ) {
                     smoothterm += smoothing_term(displut,disp,width,height,irow+1,icol,thisdisp,p1,p2);
                     smoothterm += smoothing_term(displut,disp,width,height,irow-1,icol,thisdisp,p1,p2);
@@ -184,23 +232,9 @@ void block_gibbs_iter( bool smooth,
                     smoothterm += smoothing_term(displut,disp,width,height,irow,icol-1,thisdisp,p1,p2);
                 }
 
-                int totalterm = dataterm + smoothterm;
 
-                assert( totalterm >= 0 );
-
-                if ( totalterm < minenergy ) {
-                    minenergy = totalterm;
-                }
-                if ( totalterm > maxenergy ) {
-                    maxenergy = totalterm;
-                }
-                prob[idisp] = totalterm * D;
+                prob[idisp] = dataterm + smoothterm;
             }
-
-            //if ( smooth ) {
-            //    std::cout << " min energy, max energy: " <<
-            //        minenergy << ", " << maxenergy << std::endl;
-            //}
 
             double partitionfunc = 0;
             for ( int idisp = 0; idisp < ndisp; ++idisp ) {
@@ -220,18 +254,21 @@ void block_gibbs_iter( bool smooth,
     }
 
     delete[] displut;
-    delete[] prob;
+    for ( int i = 0; i < nthread; ++i ) {
+        delete[] probs[i];
+    }
+    delete[] probs;
 
 
 }
 
 
-void block_gibbs( int niter1,
-        int niter2,
+void block_gibbs( int niter,
         int ndisp,
         int mindisp,
-        int p1,
-        int p2,
+        double _p1,
+        double _p2,
+        double temperature,
         im_t &im1,
         im_t &im2,
         im_t &disp) {
@@ -244,39 +281,40 @@ void block_gibbs( int niter1,
     int width = im1.width;
     int height = im1.height;
 
+    double p1,p2;
+    p1 = _p1 / temperature;
+    p2 = _p2 / temperature;
+
     unsigned char *ref   = im1.data;
     unsigned char *match = im2.data;
     unsigned char *out   = disp.data;
 
-    int _niter;
-
-    _niter = 2*niter1;
-
-    for ( int iter = 0; iter < _niter; ++iter ) {
-        int partition = iter % 2;
-        block_gibbs_iter( false, partition, ndisp, mindisp, p1, p2, width,
-                height, ref, match, out);
-        if ( partition == 0 ) {
-            std::cout << " done non-smooth block gibbs iter " << (iter/2+1) << " of " <<
-                niter1 << std::endl;
+    for ( int iter = 0; iter < niter;
+            ++iter ) {
+        for ( int k = 0; k < 2; ++k ) {
+            int partition = k;
+            block_gibbs_iter( true, partition, ndisp, mindisp, p1, p2, temperature, width,
+                    height, ref, match, out);
         }
-    }
+        double energy = calculate_energy( ndisp, mindisp, p1, p2, temperature, width,
+                height, ref, match, out );
 
-    _niter = 2*niter2;
-    for ( int iter = 0; iter < _niter; ++iter ) {
-        int partition = iter % 2;
-        block_gibbs_iter( true, partition, ndisp, mindisp, p1, p2, width,
-                height, ref, match, out);
-        if ( partition == 0 ) {
-            std::cout << " done smooth block gibbs iter " << (iter/2+1) << " of " <<
-                niter2 << std::endl;
-        }
+        writepgm("disp_inprogress.pgm",
+                disp.data,
+                disp.width,
+                disp.height);
+
+        std::cout << " done block gibbs iter " << iter+1 << " of " <<
+            niter << " energy: " << energy << std::endl;
+
     }
 
 }
 
 
 int main( int argc, char *argv[] ) {
+
+    std::srand(time(NULL));
 
 
     im_t im1, im2, disp;
@@ -299,15 +337,39 @@ int main( int argc, char *argv[] ) {
 
     std::fill(disp.data,disp.data+disp.width*disp.height,0);
 
-    int niter1 = 2;
-    int niter2 = 20;
+    int niter1 = 0;
     int ndisp = 128;
     int mindisp = -(ndisp-1);
-    int p1 = 10;
-    int p2 = 120;
+    double temperature = 10.; /* Temperature is unfortunately critical to
+                                 methods based on block gibbs sampling. Higher
+                                 temperature induces more variability and
+                                 possibly non convergence, lower temperatures
+                                 cause numeric instabilities as well as poor
+                                 solutions that refuse to shift from their
+                                 locally optimal solution. */
+
     std::cout << " ndisp: " << ndisp << std::endl;
     std::cout << " mindisp: " << mindisp << std::endl;
-    block_gibbs(niter1,niter2,ndisp,mindisp,p1,p2,im1,im2,disp);
+    std::cout << " temperature: " << temperature << std::endl;
+
+    double p1, p2; /* The model that is minimized uses the same p1, p2
+                      penalties as SGM and countless other stereo algorithms.
+                      */
+    int niter;
+
+    std::cout << " calculating prior: " << std::endl;
+    p1 = 0;
+    p2 = 0;
+    niter = 10;
+    block_gibbs(niter,ndisp,mindisp,p1,p2,temperature,im1,im2,disp);
+    std::cout << " done calculating prior " << std::endl;
+
+    std::cout << " calculating posterior: " << std::endl;
+    p1 = 5.;
+    p2 = 50.;
+    niter = 10000;
+    block_gibbs(niter,ndisp,mindisp,p1,p2,temperature,im1,im2,disp);
+    std::cout << " done calculating posterior " << std::endl;
 
     writepgm("disp.pgm",
             disp.data,
