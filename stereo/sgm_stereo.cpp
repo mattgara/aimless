@@ -6,6 +6,9 @@
 #include <vector>
 #include <stdexcept>
 #include <cassert>
+#include <limits>
+
+typedef  long long int energy_t; /* This datatype should be signed */
 
 
 void readpgm( const std::string &fn,
@@ -189,7 +192,7 @@ void sgm_scan(int ndisp,
         int npix,
         unsigned char *ref,
         unsigned char *match,
-        int *energymatrix /* Preallocated */ ) {
+        energy_t *energymatrix /* Preallocated */ ) {
 
     int* displut = new int[ndisp];
     int* dispdifflut = new int[ndisp*ndisp];
@@ -233,10 +236,10 @@ void sgm_scan(int ndisp,
                 rejectioncount++;
                 continue;
             }
-            int mintotalterm = INT_MAX;
+            energy_t mintotalterm = std::numeric_limits<energy_t>::max();
             for ( int idispprev = 0; idispprev < ndisp; ++idispprev ) {
                 int smoothterm = -1;
-                int v = energymatrix[ (ipix-1)*ndisp + idispprev ];
+                energy_t v = energymatrix[ (ipix-1)*ndisp + idispprev ];
                 if ( v < 0 ) {
                     continue;
                 }
@@ -254,7 +257,7 @@ void sgm_scan(int ndisp,
                     smoothterm = v + p2;
                 }
 
-                int totalterm = smoothterm + dataterm;
+                energy_t totalterm = smoothterm + dataterm;
 
                 if ( totalterm  < mintotalterm ) {
                     mintotalterm = totalterm;
@@ -301,10 +304,10 @@ void sgm( int ndisp,
     generate_x_grid(width,height,rays,idx2ray,true);
     generate_y_grid(width,height,rays,idx2ray);
     generate_y_grid(width,height,rays,idx2ray,true);
-    //generate_yx_grid(width,height,rays,idx2ray,1,1,false,false);
-    //generate_yx_grid(width,height,rays,idx2ray,1,1,true,false);
-    //generate_yx_grid(width,height,rays,idx2ray,1,1,true,true);
-    //generate_yx_grid(width,height,rays,idx2ray,1,1,false,true);
+    generate_yx_grid(width,height,rays,idx2ray,1,1,false,false);
+    generate_yx_grid(width,height,rays,idx2ray,1,1,true,false);
+    generate_yx_grid(width,height,rays,idx2ray,1,1,true,true);
+    generate_yx_grid(width,height,rays,idx2ray,1,1,false,true);
     //generate_yx_grid(width,height,rays,idx2ray,2,1,false,false);
     //generate_yx_grid(width,height,rays,idx2ray,2,1,true,false);
     //generate_yx_grid(width,height,rays,idx2ray,2,1,true,true);
@@ -314,17 +317,18 @@ void sgm( int ndisp,
     //generate_yx_grid(width,height,rays,idx2ray,1,2,true,true);
     //generate_yx_grid(width,height,rays,idx2ray,1,2,false,true);
 
-    std::vector< std::vector<int> > energies(rays.size());
+    std::vector< std::vector<energy_t> > energies(rays.size());
 
+#pragma omp parallel for
     for ( size_t i = 0; i < rays.size(); ++i ) {
         std::vector<int> &ray = rays[i];
         int *unravel = &rays[i][0];
         int npix = rays[i].size()/2;
         energies[i].resize(npix*ndisp); /* The ith energy, corresponding to this ray. */
         sgm_scan(ndisp,mindisp,p1,p2,width,unravel,npix,ref,match,&energies[i][0]);
-        if ( (i+1) % 15 == 0 ) {  /* Don't print too much */
-            std::cout << "\r done scan " << i+1 << " of " << rays.size() << std::flush;
-        }
+        //if ( (i+1) % 15 == 0 ) {  /* Don't print too much */
+        //    std::cout << "\r done scan " << i+1 << " of " << rays.size() << std::flush;
+        //}
 
     }
     std::cout << std::endl;
@@ -339,7 +343,7 @@ void sgm( int ndisp,
             size_t idx = irow * width + icol;
             size_t nrays = idx2ray[idx].size()/2;
 
-            int minenergy = INT_MAX;
+            energy_t minenergy = std::numeric_limits<energy_t>::max();
             int mindisp  = -1;
             for ( int idisp = 0; idisp < ndisp; ++idisp ) {
                 int energy = 0;
@@ -351,7 +355,7 @@ void sgm( int ndisp,
                     int lookupidx =  ndisp*idxinray + idisp;
                     assert( lookupidx >= 0 && lookupidx < ndisp*rays[rayidx].size()/2 );
                     }
-                    int rayenergy = energies[rayidx][ndisp*idxinray + idisp];
+                    energy_t rayenergy = energies[rayidx][ndisp*idxinray + idisp];
                     if ( rayenergy < 0 ) {
                         dispinvalid = true;
                         break;
@@ -388,13 +392,15 @@ int main( int argc, char *argv[] ) {
     im_t im1, im2, disp;
 
     std::cout << " Reading im1 " << std::endl;
-    readpgm("cones_left.pgm",
+    //readpgm("cones_left.pgm",
+    readpgm("im0.pgm",
             im1.data,
             im1.width,
             im1.height);
 
     std::cout << " Reading im2 " << std::endl;
-    readpgm("cones_right.pgm",
+    //readpgm("cones_right.pgm",
+    readpgm("im1.pgm",
             im2.data,
             im2.width,
             im2.height);
