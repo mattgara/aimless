@@ -326,10 +326,6 @@ void sgm( int ndisp,
         int npix = rays[i].size()/2;
         energies[i].resize(npix*ndisp); /* The ith energy, corresponding to this ray. */
         sgm_scan(ndisp,mindisp,p1,p2,width,unravel,npix,ref,match,&energies[i][0]);
-        //if ( (i+1) % 15 == 0 ) {  /* Don't print too much */
-        //    std::cout << "\r done scan " << i+1 << " of " << rays.size() << std::flush;
-        //}
-
     }
     std::cout << std::endl;
 
@@ -392,15 +388,13 @@ int main( int argc, char *argv[] ) {
     im_t im1, im2, disp;
 
     std::cout << " Reading im1 " << std::endl;
-    //readpgm("cones_left.pgm",
-    readpgm("im0.pgm",
+    readpgm("cones_left.pgm",
             im1.data,
             im1.width,
             im1.height);
 
     std::cout << " Reading im2 " << std::endl;
-    //readpgm("cones_right.pgm",
-    readpgm("im1.pgm",
+    readpgm("cones_right.pgm",
             im2.data,
             im2.width,
             im2.height);
