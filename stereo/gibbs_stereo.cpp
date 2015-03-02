@@ -8,6 +8,7 @@
 #include <cassert>
 #include <ctime>
 #include <omp.h>
+#include <limits>
 
 void readpgm( const std::string &fn,
         unsigned char* &data,
@@ -122,6 +123,15 @@ inline int sample_distribution( int n, double *prob, double norm ) {
         }
     }
 
+    if ( reti < 0  ){ /* This seems to happen only in the case when the
+                         comparison above fails which is extremely unlikely. */
+        printf(" ****warning corner case in sampling detected:\n"
+                "   cumsum=%g\n   unirand=%g\n", cumsum, unirand);
+        reti = n-1; /* It almost always seems to be the case that unirand == 1
+                       && cumsum == 1 but it is a precision error that fails
+                       the comparison above. */
+    }
+
     assert( reti >= 0 );
 
     return reti;
@@ -135,6 +145,7 @@ double calculate_energy( int ndisp,
         double temperature,
         int width, /* Image width */
         int height, /* Image width */
+        unsigned char *dataterms,
         unsigned char *ref,
         unsigned char *match,
         unsigned char *disp /* Disparity */) {
@@ -150,13 +161,14 @@ double calculate_energy( int ndisp,
     for ( int irow = 0; irow < height; ++irow ) {
         for ( int icol = 0; icol < width; ++icol ) {
             int refidx = irow * width + icol;
-            int thisdisp = disp[irow*width + icol];
+            int idisp = disp[irow*width + icol];
+            int thisdisp = displut[idisp];
             int matchx = icol + thisdisp;
             if ( matchx < 0 || matchx >= width ) {
                 continue;
             }
             int matchidx = irow*width + matchx;
-            double dataterm = std::abs((int)(ref[refidx]) - (int)(match[matchidx])) * invtemperature ;
+            double dataterm = dataterms[(irow*width+icol)*ndisp + idisp] * invtemperature;
             double smoothterm = 0;
             smoothterm += smoothing_term(displut,disp,width,height,irow+1,icol,thisdisp,p1,p2);
             smoothterm += smoothing_term(displut,disp,width,height,irow,icol+1,thisdisp,p1,p2);
@@ -180,6 +192,7 @@ void block_gibbs_iter( bool smooth,
         double temperature,
         int width, /* Image width */
         int height, /* Image width */
+        unsigned char *dataterms,
         unsigned char *ref,
         unsigned char *match,
         unsigned char *disp /* Disparity */) {
@@ -211,7 +224,6 @@ void block_gibbs_iter( bool smooth,
         for ( int icol = shift; icol < width; icol += 2 ) {
             int refidx = irow * width + icol; /* Every second element */
 
-            
             //Need to compute the energy for every possible disparity:
             for ( int idisp = 0; idisp < ndisp; ++idisp ) {
                 int thisdisp = displut[idisp];
@@ -221,7 +233,8 @@ void block_gibbs_iter( bool smooth,
                     continue;
                 }
                 int matchidx = irow*width + matchx;
-                double dataterm = std::abs((int)(ref[refidx]) - (int)(match[matchidx])) * invtemperature;
+                double dataterm = dataterms[(irow*width+icol)*ndisp + idisp] * invtemperature;
+
 
                 //Smoothing term of the four neighbours.
                 double smoothterm = 0;
@@ -234,6 +247,7 @@ void block_gibbs_iter( bool smooth,
 
 
                 prob[idisp] = dataterm + smoothterm;
+
             }
 
             double partitionfunc = 0;
@@ -269,6 +283,7 @@ void block_gibbs( int niter,
         double _p1,
         double _p2,
         double temperature,
+        unsigned char *dataterms,
         im_t &im1,
         im_t &im2,
         im_t &disp) {
@@ -294,20 +309,161 @@ void block_gibbs( int niter,
         for ( int k = 0; k < 2; ++k ) {
             int partition = k;
             block_gibbs_iter( true, partition, ndisp, mindisp, p1, p2, temperature, width,
-                    height, ref, match, out);
+                    height, dataterms, ref, match, out);
         }
         double energy = calculate_energy( ndisp, mindisp, p1, p2, temperature, width,
-                height, ref, match, out );
+                height, dataterms, ref, match, out );
 
-        writepgm("disp_inprogress.pgm",
-                disp.data,
-                disp.width,
-                disp.height);
+        if ( iter % 2  == 0 ) {
+            writepgm("disp_inprogress.pgm",
+                    disp.data,
+                    disp.width,
+                    disp.height);
+        }
 
         std::cout << " done block gibbs iter " << iter+1 << " of " <<
             niter << " energy: " << energy << std::endl;
 
     }
+
+}
+
+void calculate_dataterms( int ndisp,
+        int mindisp,
+        int rady,
+        int radx,
+        im_t &im1,
+        im_t &im2,
+        unsigned char *dataterms ) {
+
+    if ( !(im1.width == im2.width && im1.height == im2.height  ) ) {
+        std::cerr << " Images are not same dimensions." << std::endl;
+        exit(-1);
+    }
+
+    int width = im1.width;
+    int height = im1.height;
+
+    unsigned char *ref   = im1.data;
+    unsigned char *match = im2.data;
+
+    int* displut = new int[ndisp];
+    for ( int idisp = 0; idisp < ndisp; ++idisp ) {
+        displut[idisp] = idisp + mindisp; 
+    }
+
+#pragma omp parallel for
+    for ( int irow = 0; irow < height; ++irow ) {
+
+        int rsizey = 2*rady+1;
+        int rsizex = 2*radx+1;
+        double *refpx = new double[rsizey*rsizex];
+        double *matchpx = new double[rsizey*rsizex];
+
+        for ( int icol = 0; icol < width; ++icol ) {
+
+            int refidx = irow * width + icol;
+
+            for ( int idisp = 0; idisp < ndisp; ++idisp ) {
+                int thisdisp = displut[idisp];
+                int matchx = icol + thisdisp;
+                if ( matchx < 0 || matchx >= width ) {
+                    continue;
+                }
+                int matchidx = irow*width + matchx;
+
+                refpx[0] = ref[refidx];
+                matchpx[0] = match[matchidx];
+
+                double refaggrterm = refpx[0];
+                double matchaggrterm = matchpx[0];
+                int countfound = 1;
+                for ( int dy = -rady; dy <= rady; ++dy ) {
+                    for ( int dx = -radx; dx <= radx; ++dx ) {
+                        if ( dx == 0 && dy == 0 ) {
+                            continue;
+                        }
+                        int x0, y0, x1, y1;
+                        y0 = irow + dy;
+                        x0 = matchx + dx;
+                        y1 = y0;
+                        x1 = icol + dx;
+                        if ( x0 < 0 || x0 >= width || x1 < 0 || x1 >= width ||
+                                y0 < 0 || y0 >= height ) {
+                            continue;
+                        }
+                        refpx[countfound] = ref[y1*width+x1];
+                        matchpx[countfound] = match[y0*width+x0];
+                        refaggrterm += refpx[countfound];
+                        matchaggrterm += matchpx[countfound];
+                        countfound++;
+                    }
+                }
+
+                //Compute means & std
+                double refmean = refaggrterm / countfound;
+                double matchmean = matchaggrterm / countfound;
+
+                double refstd = 0;
+                double matchstd = 0;
+
+                for ( int ipx = 0; ipx < countfound; ++ipx ) {
+                    double t;
+                    t = (refpx[ipx] - refmean );
+                    refstd += t*t;
+                    t = (matchpx[ipx] - matchmean );
+                    matchstd += t*t;
+                }
+                refstd = std::sqrt(refstd);
+                matchstd = std::sqrt(matchstd);
+
+                int stdthresh = 0;
+                
+                double norm = 1. / refstd / matchstd;
+                double ncc = 0;
+                for ( int ipx = 0; ipx < countfound; ++ipx ) {
+                    ncc += (refpx[ipx] - refmean) * (matchpx[ipx] - matchmean ) * norm;
+                }
+
+                if ( matchstd > stdthresh && refstd >  stdthresh ) {
+                    if ( !( ncc <= 1+1e-6 && ncc >= -1-1e-6) ) {
+                        std::cout << " countfound: " << countfound << std::endl;
+                        std::cout << " ncc: " << ncc << std::endl;
+                        printf("nccp: %lf\n",ncc);
+                        std::cout << " refstd: " << refstd << std::endl;
+                        std::cout << " matchstd: " << matchstd << std::endl;
+                        std::cout << " refmean: " << refmean << std::endl;
+                        std::cout << " matchmean: " << matchmean << std::endl;
+                        std::cout << " refpx: ";
+                        for ( int ipx = 0; ipx < countfound; ++ipx ) {
+                            std::cout << refpx[ipx] << ", ";
+                        }
+                        std::cout << std::endl;
+                        std::cout << " matchpx: ";
+                        for ( int ipx = 0; ipx < countfound; ++ipx ) {
+                            std::cout << matchpx[ipx] << ", ";
+                        }
+                        std::cout << std::endl;
+                    }
+                    assert( ncc <= 1.+1e-6 && ncc >= -1.-1e-6);
+
+                    double output = (1-ncc) * 128;
+                    output = output < 0 ? 0 : output > 255 ? 255 : output;
+                    dataterms[ (irow*width + icol)*ndisp + idisp ] = output;
+                } else {
+                    dataterms[ (irow*width + icol)*ndisp + idisp ] = 255;
+                }
+
+            }
+
+        }
+
+        delete[] refpx;
+        delete[] matchpx;
+    }
+
+    delete[] displut;
+
 
 }
 
@@ -335,12 +491,21 @@ int main( int argc, char *argv[] ) {
     disp.height = im1.height;
     disp.data   = new unsigned char[disp.width*disp.height];
 
-    std::fill(disp.data,disp.data+disp.width*disp.height,0);
 
-    int niter1 = 0;
+    bool usecheckpoint = false;
+    std::string checkpointfile = "";
+    if ( usecheckpoint ) {
+        readpgm(checkpointfile,
+                disp.data,
+                disp.width,
+                disp.height);
+    } else {
+        std::fill(disp.data,disp.data+disp.width*disp.height,0);
+    }
+
     int ndisp = 128;
     int mindisp = -(ndisp-1);
-    double temperature = 10.; /* Temperature is unfortunately critical to
+    double temperature;       /* Temperature is unfortunately critical to
                                  methods based on block gibbs sampling. Higher
                                  temperature induces more variability and
                                  possibly non convergence, lower temperatures
@@ -350,26 +515,43 @@ int main( int argc, char *argv[] ) {
 
     std::cout << " ndisp: " << ndisp << std::endl;
     std::cout << " mindisp: " << mindisp << std::endl;
-    std::cout << " temperature: " << temperature << std::endl;
 
     double p1, p2; /* The model that is minimized uses the same p1, p2
                       penalties as SGM and countless other stereo algorithms.
                       */
+
+    /* Precompute the dataterms based on radius size */
+    int drady = 1;
+    int dradx = 1;
+    unsigned char *dataterms = new unsigned char[im1.width*im1.height*ndisp];
+    std::cout << " precomputing dataterms ... " << std::endl;
+    calculate_dataterms(ndisp,mindisp,drady,dradx,im1,im2,dataterms);
+    std::cout << " done precomputing dataterms " << std::endl;
+
     int niter;
 
-    std::cout << " calculating prior: " << std::endl;
-    p1 = 0;
-    p2 = 0;
-    niter = 10;
-    block_gibbs(niter,ndisp,mindisp,p1,p2,temperature,im1,im2,disp);
-    std::cout << " done calculating prior " << std::endl;
+    if ( !usecheckpoint ) {
+        std::cout << " calculating prior ... " << std::endl;
+        p1 = 0;
+        p2 = 0;
+        niter = 1;
+        temperature = 1.;
+        block_gibbs(niter,ndisp,mindisp,p1,p2,temperature,dataterms,im1,im2,disp);
+        std::cout << " done calculating prior " << std::endl;
+    }
 
-    std::cout << " calculating posterior: " << std::endl;
-    p1 = 5.;
-    p2 = 50.;
-    niter = 10000;
-    block_gibbs(niter,ndisp,mindisp,p1,p2,temperature,im1,im2,disp);
-    std::cout << " done calculating posterior " << std::endl;
+    /* A very reasonable set of settings is:
+     *
+     * p1 = 10; p2 = 215; temperature = 80;
+     *
+     */
+
+    std::cout << " calculating posterior ... " << std::endl;
+    p1 = 10;
+    p2 = 215;
+    niter = 2000;
+    temperature = 20.;
+    block_gibbs(niter,ndisp,mindisp,p1,p2,temperature,dataterms,im1,im2,disp);
 
     writepgm("disp.pgm",
             disp.data,
@@ -380,6 +562,7 @@ int main( int argc, char *argv[] ) {
     delete[] im1.data;
     delete[] im2.data;
     delete[] disp.data;
+    delete[] dataterms;
 
 
     return 0;
