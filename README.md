@@ -8,4 +8,4 @@ Algorithm Implementations More or Less for Education and Self Study
 
 * autoencoder: for predicting inputs and filtering. See http://en.wikipedia.org/wiki/Autoencoder
 
-* hmm: Hidden Markov Models, a library of reusable functionailty related to.
+* hmm: Hidden Markov Models, a library of reusable functionailty related to. See http://en.wikipedia.org/wiki/Hidden_Markov_model
