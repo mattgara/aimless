@@ -7,3 +7,5 @@ Algorithm Implementations More or Less for Education and Self Study
 ![alt stereo description](https://raw.github.com/mattgara/aimless/master/stereo/desc.png)
 
 * autoencoder: for predicting inputs and filtering. See http://en.wikipedia.org/wiki/Autoencoder
+
+* hmm: Hidden Markov Models, a library of reusable functionailty related to.
