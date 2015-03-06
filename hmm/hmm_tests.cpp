@@ -79,7 +79,7 @@ class TestHmm: public HiddenMarkovModel<energy_t> {
 
 int main( int argc, char * argv[] ) {
 
-    size_t nchain = 6;
+    size_t nchain = 4;
     size_t nstate = 5;
 
     TestHmm<> hmm(nchain,nstate);
@@ -131,6 +131,29 @@ int main( int argc, char * argv[] ) {
     } else {
         std::cout << " ** FAILURE ** The MAP configuration energy is "
             " NOT one of the minimal energy configurations." << std::endl;
+    }
+
+    size_t k = 625;
+    mapconfig.resize(k*nchain);
+    hmm.get_map_configuration(mapconfig.begin(),
+                mapconfig.end(),k); /* Get top k chains */
+
+    for ( size_t ik = 0; ik < k; ++ik ) {
+        std::cout << " decoded MAP state " << ik
+            << " of hmm,  " << std::endl;
+
+        size_t offsetstart = ik*nchain;
+        size_t offsetend = (ik+1)*nchain;
+
+        energy_t energy = hmm.get_configuration_energy(mapconfig.begin()
+                +offsetstart, mapconfig.begin()+offsetend);
+        std::cout << "      energy: " << energy << std::endl;
+
+        std::cout << "      states:  ";
+        for ( size_t i = 0; i < nchain; ++i ) {
+            std::cout << mapconfig[offsetstart+i] << ", ";
+        }
+        std::cout << std::endl;
     }
 
     return EXIT_SUCCESS;
