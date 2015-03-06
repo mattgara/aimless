@@ -134,12 +134,14 @@ int main( int argc, char * argv[] ) {
     }
 
     size_t k = 625;
+    std::vector<energy_t> chainenergies(k);
     mapconfig.resize(k*nchain);
     hmm.get_map_configuration(mapconfig.begin(),
-                mapconfig.end(),k); /* Get top k chains */
+                mapconfig.end(),chainenergies.begin(),
+                chainenergies.end(),k); /* Get top k chains */
 
     for ( size_t ik = 0; ik < k; ++ik ) {
-        std::cout << " decoded MAP state " << ik
+        std::cout << " decoded (pseudo) MAP state " << ik
             << " of hmm,  " << std::endl;
 
         size_t offsetstart = ik*nchain;
@@ -147,6 +149,9 @@ int main( int argc, char * argv[] ) {
 
         energy_t energy = hmm.get_configuration_energy(mapconfig.begin()
                 +offsetstart, mapconfig.begin()+offsetend);
+        if ( energy != chainenergies[ik] ) {
+            throw std::runtime_error("Energy calculations do not match.");
+        }
         std::cout << "      energy: " << energy << std::endl;
 
         std::cout << "      states:  ";

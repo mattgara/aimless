@@ -48,14 +48,27 @@ namespace aimless {
             virtual energy_t data_cost(size_t i, size_t s0) { return 0; }
 
 
-            template < class OutputIterator >
-                energy_t get_map_configuration( OutputIterator begin,
-                        OutputIterator end, size_t k = 1 ) {
+            template < class OutputStateIterator, class OutputEnergyIterator  >
+                void get_map_configuration( OutputStateIterator begin,
+                        OutputStateIterator end, OutputEnergyIterator ebegin,
+                        OutputEnergyIterator eend, size_t k ) {
 
                     if ( k > std::pow(nstate,nchain-1) ) {
                         throw std::invalid_argument(
                                 "Can not specify more chains to decode"
                                 " than are available.");
+                    }
+
+                    if ( std::distance(ebegin,eend) < k ) {
+                        throw std::invalid_argument(
+                                "Energy iterator must have at least enough space to"
+                                " store each hmm chain's energy.");
+                    }
+
+                    if ( std::distance(begin,end) < k*(nchain-1) ) {
+                        throw std::invalid_argument(
+                                "State iterator must have at least enough space to"
+                                " store hmm chain.");
                     }
 
                     if ( k > 1 ) {
@@ -74,11 +87,6 @@ namespace aimless {
 
                     }
 
-                    if ( std::distance(begin,end) < k*(nchain-1) ) {
-                        throw std::invalid_argument(
-                                "Iterator must have at least enough space to"
-                                " store hmm chain.");
-                    }
 
                     for ( size_t i = 0; i < nstate; ++i ) {
                         hmm[0][i] = data_cost(0,i); /* Initialize data terms
@@ -156,19 +164,20 @@ namespace aimless {
                     }
 
 
-                    OutputIterator lastend = begin+(nchain-1);
+                    OutputStateIterator lastend = begin+(nchain-1);
+                    OutputEnergyIterator energyit = ebegin;
 
                     for ( size_t ik = 0; ik < k; ++ik ) {
                         //Decode
-                        OutputIterator previt = lastend;
-                        OutputIterator curit = --previt;
+                        OutputStateIterator previt = lastend;
+                        OutputStateIterator curit = --previt;
                         *(curit--) = hmmpath[nchain-2][ik];
                         for ( long long int i = nchain-3; i >= 0; i--, previt--, curit-- ) {
                             *curit = hmmpath[i][*previt];
                         }
                         curit++;
                         bool skip = true;
-                        for ( OutputIterator it = curit; it != lastend; ++it ) {
+                        for ( OutputStateIterator it = curit; it != lastend; ++it ) {
                             if ( skip ) {
                                 skip = false;
                                 continue;
@@ -176,16 +185,26 @@ namespace aimless {
                             *it /= k;
                         }
                         lastend += nchain-1;
+                        //Update energy
+                        *(energyit++) = hmm[nchain-1][ik];
                     }
-
-
-                    return hmm[nchain-1][0]; /* This is always lowest energy.*/
-
 
 
             }
 
 
+            template < class OutputStateIterator>
+                energy_t get_map_configuration( OutputStateIterator begin,
+                        OutputStateIterator end ){
+
+                    std::vector<energy_t> mapenergy(1);
+                    get_map_configuration(begin,end,
+                            mapenergy.begin(),
+                            mapenergy.end(),1);
+
+                    return mapenergy[0];
+
+                }
 
     };
 
