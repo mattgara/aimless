@@ -1,3 +1,6 @@
+#ifndef AIMLESS_HMM_H
+#define AIMLESS_HMM_H
+
 #include <limits>
 #include <cstdlib>
 #include <vector>
@@ -209,3 +212,5 @@ namespace aimless {
     };
 
 }
+
+#endif
