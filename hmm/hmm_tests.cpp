@@ -48,12 +48,6 @@ class TestHmm: public HiddenMarkovModel<energy_t> {
             return energy;
         }
 
-        template < class OutputIterator >
-        energy_t brute_force_get_map_configuration( OutputIterator begin,
-                OutputIterator end ) {
-
-        }
-
         template < class Container, class Buffer > 
         void enumerate_powerset( size_t pos, Buffer &buf,
                 Container &powerset ) {
@@ -108,7 +102,6 @@ int main( int argc, char * argv[] ) {
 
     std::cout << " # members in powerset: " << 
         powerset.size() << std::endl;
-
 
     energy_t minenergy =
         std::numeric_limits<energy_t>::max();
